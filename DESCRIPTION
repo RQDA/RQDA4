@@ -1,0 +1,33 @@
+Package: RQDA
+Type: Package
+Title: Qualitative Data Analysis (RGtk4 Version)
+Version: 0.4.0
+Date: 2026-04-19
+Authors@R: c(
+    person("Ronggui", "Huang", email = "ronggui.huang@gmail.com", role = c("aut")),
+    person("Your", "Name", email = "your.email@example.com", role = c("cre"), 
+           comment = "RGtk4 port"))
+Description: Software for qualitative text analysis. This is a port of RQDA
+    from RGtk2 to RGtk4, making it compatible with modern GTK4 libraries.
+    Current version provides basic GUI framework with project management.
+    Full coding and analysis features are being progressively implemented.
+License: BSD_3_clause + file LICENSE
+Depends: 
+    R (>= 4.0.0),
+    Rgtk4,
+    RSQLite,
+    DBI
+Imports: 
+    methods,
+    utils,
+    stringi
+Suggests:
+    igraph,
+    knitr,
+    rmarkdown
+SystemRequirements: GTK4 (>= 4.0.0), pkg-config
+LazyLoad: yes
+URL: https://github.com/RQDA/RQDA
+BugReports: https://github.com/RQDA/RQDA/issues
+Encoding: UTF-8
+Config/roxygen2/version: 8.0.0
