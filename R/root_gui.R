@@ -244,6 +244,7 @@ build_rqda_gui <- function(application) {
   nb_tab_pos  <- tab_pos_map[if (!is.null(.rqda$tab.pos) && .rqda$tab.pos %in% names(tab_pos_map))
     .rqda$tab.pos else "right"]
   gtkNotebookSetTabPos(notebook_widget, unname(as.integer(nb_tab_pos)))
+  gtkNotebookSetScrollable(notebook_widget, TRUE)
   # Fix wiggle on first tab switch: pre-allocate notebook size
   gtkWidgetSetVexpand(notebook_widget, TRUE)
   gtkWidgetSetHexpand(notebook_widget, TRUE)

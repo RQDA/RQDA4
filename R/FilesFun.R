@@ -339,8 +339,7 @@ ViewFileFunHelper <- function(FileName, highlight = TRUE, codingTable = .rqda$co
     if (!is.null(codes_df) && nrow(codes_df) > 0) {
       for (i in seq_len(nrow(codes_df))) {
         col    <- codes_df$color[i]
-        prefix <- if (!is.na(col) && nzchar(col)) "■ " else "  "
-        gtkStringListAppend(code_store, paste0(prefix, codes_df$name[i]))
+        gtkStringListAppend(code_store, codes_df$name[i])
       }
     }
     code_drop <- gtkDropDownNew(code_store, NULL)
@@ -373,12 +372,120 @@ ViewFileFunHelper <- function(FileName, highlight = TRUE, codingTable = .rqda$co
     gtkBoxAppend(toolbar, anno_btn)
     gtkBoxAppend(toolbar, edit_btn)
 
+    # ── View settings hamburger menu ───────────────────────────────────
+    menu_btn <- gtkMenuButtonNew()
+    # Set label via child widget - avoids gtkButtonSetLabel on GtkMenuButton
+    tryCatch({
+      lbl_child <- gtkLabelNew("☰") # ☰ hamburger
+      gtkMenuButtonSetChild(menu_btn, lbl_child)
+    }, error = function(e) {
+      tryCatch(gtkMenuButtonSetLabel(menu_btn, "⋮"), error=function(e2){})
+    })
+    gtkWidgetSetTooltipText(menu_btn, "View options")
+    gtkBoxAppend(toolbar, menu_btn)
+
+    # Popover content
+    pop_box <- gtkBoxNew(1L, 8L)
+    gtkWidgetSetMarginTop(pop_box, 10L); gtkWidgetSetMarginBottom(pop_box, 10L)
+    gtkWidgetSetMarginStart(pop_box, 12L); gtkWidgetSetMarginEnd(pop_box, 12L)
+
+    add_pop_row <- function(label_txt, widget) {
+      row <- gtkBoxNew(0L, 10L)
+      lbl <- gtkLabelNew(label_txt)
+      gtkLabelSetXalign(lbl, 0.0)
+      gtkWidgetSetHexpand(lbl, TRUE)
+      gtkBoxAppend(row, lbl)
+      gtkBoxAppend(row, widget)
+      gtkBoxAppend(pop_box, row)
+      row
+    }
+
+    # Reload codings helper (applies changes immediately)
+    apply_viewer_settings <- function() {
+      tryCatch({
+        if (exists(".viewer_reload", envir=.rqda) &&
+            is.function(.rqda$.viewer_reload))
+          .rqda$.viewer_reload()
+      }, error=function(e){})
+    }
+
+    # Line spacing
+    spacing_box <- gtkBoxNew(0L, 4L)
+    sp_minus <- gtkButtonNewWithLabel("−")
+    sp_lbl   <- gtkLabelNew("0px")
+    sp_plus  <- gtkButtonNewWithLabel("+")
+    gtkBoxAppend(spacing_box, sp_minus)
+    gtkBoxAppend(spacing_box, sp_lbl)
+    gtkBoxAppend(spacing_box, sp_plus)
+    spacing <- new.env(parent=emptyenv()); spacing$n <- 0L
+    update_spacing <- function() {
+      gtkLabelSetText(sp_lbl, sprintf("%dpx", spacing$n))
+      tryCatch({
+        gtkTextViewSetPixelsAboveLines(textview, as.integer(spacing$n))
+        gtkTextViewSetPixelsBelowLines(textview, as.integer(spacing$n %/% 2L))
+        gtkTextViewSetPixelsInsideWrap(textview, as.integer(spacing$n))
+      }, error=function(e){})
+    }
+    gSignalConnectR(sp_plus,  "clicked", function(w) { spacing$n <- spacing$n + 1L; update_spacing() })
+    gSignalConnectR(sp_minus, "clicked", function(w) { spacing$n <- max(0L, spacing$n - 1L); update_spacing() })
+    add_pop_row("Line spacing", spacing_box)
+
+    # Wrap mode toggle
+    wrap_check <- gtkCheckButtonNew()
+    gtkCheckButtonSetActive(wrap_check, TRUE)
+    wrap_state <- new.env(parent=emptyenv()); wrap_state$on <- TRUE
+    gSignalConnectR(wrap_check, "toggled", function(w) {
+      wrap_state$on <- !wrap_state$on
+      gtkTextViewSetWrapMode(textview, if (wrap_state$on) 2L else 0L)
+    })
+    add_pop_row("Wrap text", wrap_check)
+
+    # Font size (zoom) spinner-style: + and -
+    zoom_box <- gtkBoxNew(0L, 4L)
+    zoom_minus <- gtkButtonNewWithLabel("−")
+    zoom_lbl   <- gtkLabelNew(sprintf("%dpt", as.integer(.rqda$font.size %||% 11L)))
+    zoom_plus  <- gtkButtonNewWithLabel("+")
+    gtkBoxAppend(zoom_box, zoom_minus)
+    gtkBoxAppend(zoom_box, zoom_lbl)
+    gtkBoxAppend(zoom_box, zoom_plus)
+    zoom_delta <- new.env(parent=emptyenv()); zoom_delta$n <- 0L
+    gSignalConnectR(zoom_plus, "clicked", function(w) {
+      zoom_delta$n <- zoom_delta$n + 1L
+      sz <- max(6L, (.rqda$font.size %||% 11L) + zoom_delta$n)
+      gtkLabelSetText(zoom_lbl, sprintf("%dpt", sz))
+      apply_font_css(textview, size=sz)
+    })
+    gSignalConnectR(zoom_minus, "clicked", function(w) {
+      zoom_delta$n <- zoom_delta$n - 1L
+      sz <- max(6L, (.rqda$font.size %||% 11L) + zoom_delta$n)
+      gtkLabelSetText(zoom_lbl, sprintf("%dpt", sz))
+      apply_font_css(textview, size=sz)
+    })
+    add_pop_row("Font size", zoom_box)
+
+    popover <- gtkPopoverNew()
+    gtkPopoverSetChild(popover, pop_box)
+    gtkPopoverSetAutohide(popover, TRUE)
+    gtkMenuButtonSetPopover(menu_btn, popover)
+
+    # Update status label when dropdown selection changes
+    gSignalConnectR(code_drop, "notify::selected-item", function(obj, pspec) {
+      tryCatch({
+        idx  <- gtkDropDownGetSelected(code_drop)
+        if (!is.null(idx) && idx >= 0L) {
+          item <- gtkStringListGetString(code_store, as.integer(idx))
+          if (!is.null(item) && nzchar(item))
+            gtkLabelSetText(status_lbl, trimws(item))
+        }
+      }, error=function(e){})
+    })
+
     get_selected_code <- function() {
       idx  <- gtkDropDownGetSelected(code_drop)
       if (is.null(idx) || idx < 0L) return(NULL)
       item <- gtkStringListGetString(code_store, as.integer(idx))
       if (is.null(item) || item == "") return(NULL)
-      sub("^[■ ]{1,2}\\s*", "", item)
+      item
     }
 
     do_reload <- function() {
@@ -388,7 +495,7 @@ ViewFileFunHelper <- function(FileName, highlight = TRUE, codingTable = .rqda$co
       tryCatch(
         gtkTextTagTableForeach(tag_table, function(tag) {
           nm <- tryCatch(gObjectGetProperty(tag, "name"), error=function(e) "")
-          if (!is.null(nm) && nzchar(nm) && (startsWith(nm,"fg_") || startsWith(nm,"bg_")))
+          if (!is.null(nm) && nzchar(nm) && (startsWith(nm,"fg_") || startsWith(nm,"bg_") || startsWith(nm,"tip_")))
             tryCatch(gtkTextBufferRemoveTag(buffer, tag, bounds$start, bounds$end), error=function(e){})
         }),
         error = function(e)
@@ -400,8 +507,7 @@ ViewFileFunHelper <- function(FileName, highlight = TRUE, codingTable = .rqda$co
       if (!is.null(fresh) && nrow(fresh) > 0) {
         for (i in seq_len(nrow(fresh))) {
           col    <- fresh$color[i]
-          prefix <- if (!is.na(col) && nzchar(col)) "■ " else "  "
-          gtkStringListAppend(new_store, paste0(prefix, fresh$name[i]))
+          gtkStringListAppend(new_store, fresh$name[i])
         }
       }
       gtkDropDownSetModel(code_drop, new_store)
@@ -459,7 +565,10 @@ ViewFileFunHelper <- function(FileName, highlight = TRUE, codingTable = .rqda$co
         fid, offset, offset))
       if (!is.null(at) && nrow(at)>0) {
         Encoding(at$name) <- "UTF-8"
-        gtkLabelSetText(status_lbl, paste(at$name, collapse=", "))
+        gtkLabelSetMarkup(status_lbl,
+                          paste(sprintf("<b>%s</b>",
+                                        gsub("&","&amp;",gsub("<","&lt;",at$name))),
+                                collapse=", "))
       } else {
         gtkLabelSetText(status_lbl, "")
       }
@@ -501,6 +610,7 @@ ViewFileFunHelper <- function(FileName, highlight = TRUE, codingTable = .rqda$co
         tag <- gtkTextTagNew("search_highlight")
         gObjectSetString(tag, "background", "#FFE135")
         gObjectSetString(tag, "foreground", "#000000")
+        gObjectSetEnum(tag, "weight", 700L)   # PANGO_WEIGHT_BOLD
         gtkTextTagTableAdd(tag_table, tag)
       }
       tag
